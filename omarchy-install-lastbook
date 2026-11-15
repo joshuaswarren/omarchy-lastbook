@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# omarchy:summary=Install Lastbook, the offline survival library with a local AI chat.
+# omarchy:requires-sudo=true
+
+set -euo pipefail
+
+REPO=${OMARCHY_LASTBOOK_REPO:-https://github.com/joshuaswarren/omarchy-lastbook}
+REF=${OMARCHY_LASTBOOK_REF:-main}
+WORK=${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-lastbook
+
+case "$(uname -m)" in
+  x86_64 | aarch64) ;;
+  *) echo "Lastbook has no build for $(uname -m)." >&2; exit 1 ;;
+esac
+
+if ! pacman -Q lastbook &>/dev/null; then
+  echo "Building Lastbook (llama.cpp with Vulkan compiles here, about 10 to 20 minutes)..."
+  omarchy-pkg-add base-devel git
+  rm -rf "$WORK"
+  git clone --quiet --depth 1 --branch "$REF" "$REPO" "$WORK"
+  (cd "$WORK" && makepkg --syncdeps --install --noconfirm --needed)
+fi
+
+echo "Lastbook is installed. Open it from the app launcher."
+setsid uwsm-app -- gtk-launch lastbook >/dev/null 2>&1 &
