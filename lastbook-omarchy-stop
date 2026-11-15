@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stop the Omarchy AI server that lastbook-omarchy started.
+pkill -f "mlx_omarchy_serve serve gemma-4-e4b-it-4bit --context 4096 --port 18951" && echo stopped || echo "not running"

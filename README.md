@@ -24,3 +24,10 @@ and opens Lastbook. After that, Lastbook is in the app launcher (Super + Space).
 git clone https://github.com/joshuaswarren/omarchy-lastbook && cd omarchy-lastbook
 makepkg --syncdeps --install
 ```
+
+## Chat on the Omarchy engine (Apple silicon)
+
+On an Apple silicon Mac running Omarchy with `omarchy-mlx` installed, `/usr/bin/lastbook` starts the Omarchy engine instead of the bundled runner:
+it serves the pinned catalog model `gemma-4-e4b-it-4bit` through `mlx-omarchy-serve` on loopback port 18951 (about 5 GiB of memory),
+waits for it to come up, and starts the app pointed at that server. The bundled llama.cpp runner stays off. The server keeps
+running between launches; `lastbook-omarchy-stop` ends it. Without `omarchy-mlx`, the menu entry works exactly as before.

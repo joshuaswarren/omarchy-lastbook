@@ -1,0 +1,27 @@
+#!/bin/sh
+# Chat on the Omarchy engine: serve the catalog model, then hand the app its
+# loopback address. Keeps the server running between launches; the bundled
+# runner stays off while this server answers.
+set -u
+PORT=18951
+MODEL=gemma-4-e4b-it-4bit
+BASE="http://127.0.0.1:$PORT"
+up() { curl -sf --max-time 2 "$BASE/v1/models" >/dev/null 2>&1; }
+if ! up; then
+  nohup mlx-omarchy-serve serve "$MODEL" --context 4096 --port "$PORT" \
+    >"$HOME/.local/state/lastbook-omarchy-serve.log" 2>&1 &
+  disown
+fi
+i=0
+while ! up; do
+  i=$((i + 1))
+  [ "$i" -gt 90 ] && { echo "omarchy AI server did not come up; log: $HOME/.local/state/lastbook-omarchy-serve.log" >&2; exit 1; }
+  sleep 1
+done
+# The app must post an id the server lists, and answers must fit the server's
+# admitted context (the serve cap rejects oversized prompt+max_tokens with 404).
+LISTED=$(curl -sf --max-time 3 "$BASE/v1/models" | sed -n 's/.*"id":[[:space:]]*"\([^"]*\)".*/\1/p' | grep -Fx "$MODEL" | head -1)
+[ -n "$LISTED" ] || LISTED=$(curl -sf --max-time 3 "$BASE/v1/models" | sed -n 's/.*"id":[[:space:]]*"\([^"]*\)".*/\1/p' | tail -1)
+[ -n "$LISTED" ] || { echo "omarchy AI server lists no model" >&2; exit 1; }
+export LASTBOOK_LOCAL_AI=0 SURVIVAL_MODEL_BASE="$BASE" SURVIVAL_MODEL="$LISTED" LASTBOOK_ROUND_TOKENS=1024
+exec /usr/bin/python -I -B /opt/lastbook/lastbook.py "$@"

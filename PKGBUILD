@@ -9,16 +9,19 @@ license=(MIT)
 # The window is the system's GTK 3 and WebKitGTK 4.1 through python-gobject. The Python wheels that Arch does not package
 # (libzim, pypdfium2, beautifulsoup4, soupsieve) are pinned below and installed into /opt/lastbook/lib, as upstream's .deb does.
 depends=(python python-gobject python-numpy python-typing_extensions gtk3 webkit2gtk-4.1 libsoup3
-         gstreamer gst-plugins-base gst-plugins-good gst-libav vulkan-icd-loader gcc-libs)
+         gstreamer gst-plugins-base gst-plugins-good gst-libav vulkan-icd-loader gcc-libs curl)
 makedepends=(cmake ninja gcc python-pillow shaderc vulkan-headers spirv-headers)
 optdepends=('vulkan-radeon: local AI on AMD graphics' 'nvidia-utils: local AI on NVIDIA graphics'
-            'vulkan-intel: local AI on Intel graphics' 'vulkan-asahi: local AI on Apple Silicon')
+            'vulkan-intel: local AI on Intel graphics' 'vulkan-asahi: local AI on Apple Silicon'
+            'omarchy-mlx: chat on the Omarchy engine (Apple silicon)')
 options=(!strip)
 _lb=4d6c2e75d481d22341f31d02586fee79c86066c2
 _llama=dde879bc4f954b809892fd0d660515f42536394a
 source=("lastbook-$_lb.tar.gz::https://github.com/Immortal-Protocols/lastbook/archive/$_lb.tar.gz"
         "llama.cpp-$_llama.tar.gz::https://github.com/ggml-org/llama.cpp/archive/$_llama.tar.gz"
         'manifest-v1.json::https://downloads.lastbook.org/manifest-v1.json'   # changes upstream, so it has no checksum
+        'lastbook-omarchy'
+        'lastbook-omarchy-stop'
         'beautifulsoup4-4.15.0-py3-none-any.whl::https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl'
         'soupsieve-4.1.1-py3-none-any.whl::https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl')
 source_x86_64=('libzim-3.13.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl::https://files.pythonhosted.org/packages/31/f3/16820fa6041ecbf6c6b54d1b3dcc23e3489f71447870f36a3d2779092434/libzim-3.13.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl'
@@ -28,6 +31,8 @@ source_aarch64=('libzim-3.13.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28
 sha256sums=('f9a74784fa7315f54dd33c9e43a2ceae8f467645f59aacee9811a26da41ce77d'
             '83f099b6bbb531ca72d22cdd76d86641438469a214fd49a38f026c6a868598ed'
             'SKIP'
+            'fb5a29742491a615516bed9e5648fcf80455ee26399ffbab99a56912b3b41aab'
+            '86ab3eb11bd2f783125739c2aface6c5ec6904586832e4cda92e6a16e08ac216'
             'd6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9'
             '8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6')
 sha256sums_x86_64=('bc29b54e91690de33706d765605d3ca9a63e066ce70175f51bf1169ba63bef70'
@@ -73,6 +78,10 @@ package() {
   install -d "$opt"/{app,engine/setup,setup,lib,llm,gst}
   install -m644 "$lb"/app/{main,bridge,shell_linux}.py "$opt/app/"
   install -m644 "$lb"/{server,retrieval,assistant,llm_local}.py "$opt/"
+  # The Omarchy engine rejects a request whose prompt plus max_tokens exceeds its
+  # admitted context (it answers 404); make the per-round budget overridable.
+  sed -i 's/^ROUND_TOKENS = 1800$/ROUND_TOKENS = int(os.environ.get("LASTBOOK_ROUND_TOKENS", "1800"))/' \
+    "$opt/assistant.py"
   install -m644 "$lb"/engine/{__init__,paths,library,saved_pages,address_search,update}.py "$opt/engine/"
   install -m644 "$lb"/engine/setup/*.py "$lb/engine/setup/roots.pem" "$opt/engine/setup/"
   cp -R "$srcdir/ship/web" "$srcdir/ship/content" "$opt/"
@@ -97,7 +106,11 @@ package() {
   python -I -m compileall -q -s "$pkgdir" -p / "$opt" > /dev/null
 
   install -d "$pkgdir/usr/bin" "$pkgdir/usr/share/applications"
-  printf '#!/bin/sh\nexec /usr/bin/python -I -B /opt/lastbook/lastbook.py "$@"\n' > "$pkgdir/usr/bin/lastbook"
+  # On Apple silicon with the Omarchy AI stack, chat runs on the Omarchy engine
+  # (mlx-omarchy-serve); everywhere else Lastbook uses its bundled runner.
+  install -m755 "$srcdir/lastbook-omarchy" "$pkgdir/usr/bin/lastbook-omarchy"
+  install -m755 "$srcdir/lastbook-omarchy-stop" "$pkgdir/usr/bin/lastbook-omarchy-stop"
+  printf '#!/bin/sh\nif [ "$(uname -m)" = aarch64 ] && command -v mlx-omarchy-serve >/dev/null 2>&1; then\n  exec /usr/bin/lastbook-omarchy "$@"\nfi\nexec /usr/bin/python -I -B /opt/lastbook/lastbook.py "$@"\n' > "$pkgdir/usr/bin/lastbook"
   chmod 755 "$pkgdir/usr/bin/lastbook"
   install -m644 "$lb/packaging/linux/lastbook.desktop" "$pkgdir/usr/share/applications/lastbook.desktop"
   python -I - "$lb/packaging/icon/tile-1024.png" "$pkgdir/usr/share/icons/hicolor" <<'PY'
